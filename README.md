@@ -40,7 +40,7 @@ entre 0 y 1. Es el mismo modelo que recorre el bootcamp desde el Módulo 2.
 
 ---
 
-## 2. Las tres cuentas de servicio
+## 2. Las cuatro cuentas de servicio
 
 Una sola cuenta accede a los datos de los tres proyectos, y cada servicio de
 orquestación tiene la suya con el mínimo imprescindible.
@@ -50,7 +50,16 @@ orquestación tiene la suya con el mínimo imprescindible.
 | `sa-vertex-pipeline` | Ejecuta el pipeline y toca BigQuery de los 3 proyectos | ver tabla §3 |
 | `sa-cloud-run-job` | Lanza el PipelineJob | `aiplatform.user`, `iam.serviceAccountTokenCreator`, `storage.objectViewer`, **`iam.serviceAccountUser` sobre `sa-vertex-pipeline`** |
 | `sa-scheduler` | Dispara el Cloud Run Job | `run.invoker` sobre el job, y nada más |
-| `sa-github` | CI/CD | `run.admin`, `artifactregistry.writer`, escritura en el bucket, `serviceAccountUser` sobre las dos anteriores |
+| `sa-github` | CI/CD | `run.admin`, `artifactregistry.writer` sobre el repositorio `imagen`, escritura en el bucket, `serviceAccountUser` sobre las dos anteriores, y `aiplatform.user` |
+
+Solo `sa-vertex-pipeline` toca datos. Las otras tres orquestan: una lanza el
+pipeline, otra dispara a la primera y la tercera despliega. Ninguna tiene
+acceso a BigQuery ni al modelo.
+
+De los roles de `sa-github`, **`aiplatform.user` no lo usa**: el workflow
+despliega el Cloud Run Job, pero no lanza ningún PipelineJob — eso lo hace el
+Job en tiempo de ejecución, con su propia cuenta. Se concedió al montar el CI/CD
+por simetría con `sa-cloud-run-job` y se puede retirar.
 
 ---
 
