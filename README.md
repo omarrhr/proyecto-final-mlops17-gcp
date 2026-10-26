@@ -185,6 +185,33 @@ permisos/
   cd_vertex.yaml               compila, sube el pipeline, construye y despliega
 ```
 
+## 4.1 Despliegue continuo
+
+Cada `push` a `main` dispara `.github/workflows/cd_vertex.yaml`, que hace cuatro
+cosas en orden:
+
+1. **Compila el pipeline.** Ejecuta `my_app/pipeline_prediction.py`, que genera
+   el YAML. Si el código del pipeline está roto, el build falla aquí y no se
+   despliega nada: es la parte de *integración continua*.
+2. **Sube el YAML compilado** a `gs://dp-mlops17-ohuaman-pf-vertex/demo/`.
+3. **Construye y publica la imagen** del Cloud Run Job en Artifact Registry.
+4. **Redespliega el Cloud Run Job** con esa imagen y con todas las variables de
+   entorno, incluidas las tres tablas y la cuenta de servicio con la que debe
+   correr el pipeline.
+
+El workflow se autentica como `sa-github`, que no toca datos: solo despliega.
+
+### Secretos que necesita el repositorio
+
+| Secreto | Qué es |
+|---|---|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Clave JSON de `sa-github`. Es lo único sensible del repositorio, y por eso `.gitignore` bloquea cualquier `*.json` |
+| `GOOGLE_PROJECT` | `dp-mlops17-ohuaman-pf-proc`, el proyecto de procesamiento |
+| `NOTIFICATION_EMAIL` | Destinatario de la notificación del `ExitHandler`. Es configuración, no código: así no queda un correo personal en el repositorio |
+
+Los otros dos proyectos no son secretos y van escritos en el propio workflow,
+porque sus identificadores no dan acceso a nada por sí solos.
+
 ---
 
 ## 5. Nota de migración: el stack del curso quedó obsoleto
