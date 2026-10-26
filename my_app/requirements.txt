@@ -1,0 +1,7 @@
+# Versiones con las que el pipeline compila hoy.
+# El material de clase fija kfp==1.8.21, pero Vertex AI ya no admite ese
+# formato ("SchemaVersion < 2.0.0 are not longer supported"), por lo que el
+# pipeline esta portado a kfp 2.x.
+kfp>=2.7
+google-cloud-pipeline-components>=2.14
+google-cloud-aiplatform

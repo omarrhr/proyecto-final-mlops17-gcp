@@ -1,0 +1,635 @@
+# PIPELINE DEFINITION
+# Name: pipeline-prediccion-proyecto-final
+# Description: Pipeline de prediccion sobre tres proyectos GCP
+# Inputs:
+#    features_table: str
+#    input_overall_qual: float [Default: 0.0]
+#    path_model: str
+#    prc_preparar: str [Default: 'dp-mlops17-ohuaman-pf-proc.ds_procesamiento.prc_preparar_universo']
+#    project: str
+#    recipients: list
+#    source_input_table: str
+#    table_aux: str
+#    table_id: str
+#    table_output: str
+components:
+  comp-bigquery-query-job:
+    executorLabel: exec-bigquery-query-job
+    inputDefinitions:
+      parameters:
+        encryption_spec_key_name:
+          defaultValue: ''
+          description: Describes the Cloud KMS encryption key that will be used to
+            protect destination BigQuery table. The BigQuery Service Account associated
+            with your project requires access to this encryption key. If encryption_spec_key_name
+            are both specified in here and in job_configuration_query, the value in
+            here will override the other one.
+          isOptional: true
+          parameterType: STRING
+        job_configuration_query:
+          defaultValue: {}
+          description: A json formatted string describing the rest of the job configuration.  For
+            more details, see https://cloud.google.com/bigquery/docs/reference/rest/v2/Job#JobConfigurationQuery
+          isOptional: true
+          parameterType: STRUCT
+        labels:
+          defaultValue: {}
+          description: 'The labels associated with this job. You can use these to
+            organize and group your jobs. Label keys and values can be no longer than
+            63 characters, can only containlowercase letters, numeric characters,
+            underscores and dashes. International characters are allowed. Label values
+            are optional. Label keys must start with a letter and each label in the
+            list must have a different key.
+
+            Example: { "name": "wrench", "mass": "1.3kg", "count": "3" }.'
+          isOptional: true
+          parameterType: STRUCT
+        location:
+          defaultValue: us-central1
+          description: Location for creating the BigQuery job. If not set, default
+            to `US` multi-region.  For more details, see https://cloud.google.com/bigquery/docs/locations#specifying_your_location
+          isOptional: true
+          parameterType: STRING
+        project:
+          defaultValue: '{{$.pipeline_google_cloud_project_id}}'
+          description: Project to run the BigQuery query job. Defaults to the project
+            in which the PipelineJob is run.
+          isOptional: true
+          parameterType: STRING
+        query:
+          defaultValue: ''
+          description: SQL query text to execute. Only standard SQL is supported.  If
+            query are both specified in here and in job_configuration_query, the value
+            in here will override the other one.
+          isOptional: true
+          parameterType: STRING
+        query_parameters:
+          defaultValue: []
+          description: jobs.query parameters for standard SQL queries.  If query_parameters
+            are both specified in here and in job_configuration_query, the value in
+            here will override the other one.
+          isOptional: true
+          parameterType: LIST
+    outputDefinitions:
+      artifacts:
+        destination_table:
+          artifactType:
+            schemaTitle: google.BQTable
+            schemaVersion: 0.0.1
+          description: Describes the table where the query results should be stored.
+            This property must be set for large results that exceed the maximum response
+            size. For queries that produce anonymous (cached) results, this field
+            will be populated by BigQuery.
+      parameters:
+        gcp_resources:
+          description: Serialized gcp_resources proto tracking the BigQuery job. For
+            more details, see https://github.com/kubeflow/pipelines/blob/master/components/google-cloud/google_cloud_pipeline_components/proto/README.md.
+          parameterType: STRING
+  comp-build-query:
+    executorLabel: exec-build-query
+    inputDefinitions:
+      parameters:
+        input_overall_qual:
+          parameterType: NUMBER_DOUBLE
+        prc_preparar:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-condition-2:
+    dag:
+      tasks:
+        error-op:
+          cachingOptions:
+            enableCache: true
+          componentRef:
+            name: comp-error-op
+          inputs:
+            parameters:
+              msg:
+                runtimeValue:
+                  constant: No se logro validar las tablas de ingesta del proyecto
+                    fuente.
+          taskInfo:
+            name: error-op
+    inputDefinitions:
+      parameters:
+        pipelinechannel--validate-data-condition:
+          parameterType: STRING
+  comp-condition-3:
+    dag:
+      tasks:
+        bigquery-query-job:
+          cachingOptions:
+            enableCache: true
+          componentRef:
+            name: comp-bigquery-query-job
+          dependentTasks:
+          - build-query
+          inputs:
+            parameters:
+              labels:
+                runtimeValue:
+                  constant:
+                    curso: mlops17
+                    proyecto: final
+              location:
+                runtimeValue:
+                  constant: US
+              project:
+                componentInputParameter: pipelinechannel--project
+              query:
+                taskOutputParameter:
+                  outputParameterKey: Output
+                  producerTask: build-query
+          taskInfo:
+            name: PRC_PREPARAR_UNIVERSO
+        build-query:
+          cachingOptions:
+            enableCache: true
+          componentRef:
+            name: comp-build-query
+          inputs:
+            parameters:
+              input_overall_qual:
+                componentInputParameter: pipelinechannel--input_overall_qual
+              prc_preparar:
+                componentInputParameter: pipelinechannel--prc_preparar
+          taskInfo:
+            name: Build Query
+        prediction:
+          cachingOptions:
+            enableCache: true
+          componentRef:
+            name: comp-prediction
+          dependentTasks:
+          - bigquery-query-job
+          inputs:
+            parameters:
+              features_table:
+                componentInputParameter: pipelinechannel--features_table
+              input_overall_qual:
+                componentInputParameter: pipelinechannel--input_overall_qual
+              path_model:
+                componentInputParameter: pipelinechannel--path_model
+              project:
+                componentInputParameter: pipelinechannel--project
+              source_table:
+                componentInputParameter: pipelinechannel--table_output
+              table_aux:
+                componentInputParameter: pipelinechannel--table_aux
+              table_id:
+                componentInputParameter: pipelinechannel--table_id
+          taskInfo:
+            name: PREDICTION_MODEL
+    inputDefinitions:
+      parameters:
+        pipelinechannel--features_table:
+          parameterType: STRING
+        pipelinechannel--input_overall_qual:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--path_model:
+          parameterType: STRING
+        pipelinechannel--prc_preparar:
+          parameterType: STRING
+        pipelinechannel--project:
+          parameterType: STRING
+        pipelinechannel--table_aux:
+          parameterType: STRING
+        pipelinechannel--table_id:
+          parameterType: STRING
+        pipelinechannel--table_output:
+          parameterType: STRING
+        pipelinechannel--validate-data-condition:
+          parameterType: STRING
+  comp-error-op:
+    executorLabel: exec-error-op
+    inputDefinitions:
+      parameters:
+        msg:
+          parameterType: STRING
+  comp-exit-handler-1:
+    dag:
+      tasks:
+        condition-2:
+          componentRef:
+            name: comp-condition-2
+          dependentTasks:
+          - validate-data
+          inputs:
+            parameters:
+              pipelinechannel--validate-data-condition:
+                taskOutputParameter:
+                  outputParameterKey: condition
+                  producerTask: validate-data
+          taskInfo:
+            name: no-execute
+          triggerPolicy:
+            condition: inputs.parameter_values['pipelinechannel--validate-data-condition']
+              == 'false'
+        condition-3:
+          componentRef:
+            name: comp-condition-3
+          dependentTasks:
+          - validate-data
+          inputs:
+            parameters:
+              pipelinechannel--features_table:
+                componentInputParameter: pipelinechannel--features_table
+              pipelinechannel--input_overall_qual:
+                componentInputParameter: pipelinechannel--input_overall_qual
+              pipelinechannel--path_model:
+                componentInputParameter: pipelinechannel--path_model
+              pipelinechannel--prc_preparar:
+                componentInputParameter: pipelinechannel--prc_preparar
+              pipelinechannel--project:
+                componentInputParameter: pipelinechannel--project
+              pipelinechannel--table_aux:
+                componentInputParameter: pipelinechannel--table_aux
+              pipelinechannel--table_id:
+                componentInputParameter: pipelinechannel--table_id
+              pipelinechannel--table_output:
+                componentInputParameter: pipelinechannel--table_output
+              pipelinechannel--validate-data-condition:
+                taskOutputParameter:
+                  outputParameterKey: condition
+                  producerTask: validate-data
+          taskInfo:
+            name: execute
+          triggerPolicy:
+            condition: inputs.parameter_values['pipelinechannel--validate-data-condition']
+              == 'true'
+        validate-data:
+          cachingOptions:
+            enableCache: true
+          componentRef:
+            name: comp-validate-data
+          inputs:
+            parameters:
+              features_table:
+                componentInputParameter: pipelinechannel--features_table
+              source_input_table:
+                componentInputParameter: pipelinechannel--source_input_table
+          taskInfo:
+            name: Validate Data
+    inputDefinitions:
+      parameters:
+        pipelinechannel--features_table:
+          parameterType: STRING
+        pipelinechannel--input_overall_qual:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--path_model:
+          parameterType: STRING
+        pipelinechannel--prc_preparar:
+          parameterType: STRING
+        pipelinechannel--project:
+          parameterType: STRING
+        pipelinechannel--source_input_table:
+          parameterType: STRING
+        pipelinechannel--table_aux:
+          parameterType: STRING
+        pipelinechannel--table_id:
+          parameterType: STRING
+        pipelinechannel--table_output:
+          parameterType: STRING
+  comp-prediction:
+    executorLabel: exec-prediction
+    inputDefinitions:
+      parameters:
+        features_table:
+          parameterType: STRING
+        input_overall_qual:
+          parameterType: NUMBER_DOUBLE
+        path_model:
+          parameterType: STRING
+        project:
+          parameterType: STRING
+        source_table:
+          parameterType: STRING
+        table_aux:
+          parameterType: STRING
+        table_id:
+          parameterType: STRING
+  comp-validate-data:
+    executorLabel: exec-validate-data
+    inputDefinitions:
+      parameters:
+        features_table:
+          parameterType: STRING
+        source_input_table:
+          parameterType: STRING
+    outputDefinitions:
+      parameters:
+        condition:
+          parameterType: STRING
+  comp-vertex-pipelines-notification-email:
+    executorLabel: exec-vertex-pipelines-notification-email
+    inputDefinitions:
+      parameters:
+        pipeline_task_final_status:
+          isOptional: true
+          parameterType: TASK_FINAL_STATUS
+        recipients:
+          description: A list of email addresses to send a notification to.
+          parameterType: LIST
+defaultPipelineRoot: gs://dp-mlops17-ohuaman-pf-vertex/demo
+deploymentSpec:
+  executors:
+    exec-bigquery-query-job:
+      container:
+        args:
+        - --type
+        - BigqueryQueryJob
+        - --project
+        - '{{$.inputs.parameters[''project'']}}'
+        - --location
+        - '{{$.inputs.parameters[''location'']}}'
+        - --payload
+        - '{"Concat": ["{", "\"configuration\": {", "\"query\": ", "{{$.inputs.parameters[''job_configuration_query'']}}",
+          ", \"labels\": ", "{{$.inputs.parameters[''labels'']}}", "}", "}"]}'
+        - --job_configuration_query_override
+        - '{"Concat": ["{", "\"query\": \"", "{{$.inputs.parameters[''query'']}}",
+          "\"", ", \"query_parameters\": ", "{{$.inputs.parameters[''query_parameters'']}}",
+          ", \"destination_encryption_configuration\": {", "\"kmsKeyName\": \"", "{{$.inputs.parameters[''encryption_spec_key_name'']}}",
+          "\"}", "}"]}'
+        - --gcp_resources
+        - '{{$.outputs.parameters[''gcp_resources''].output_file}}'
+        - --executor_input
+        - '{{$}}'
+        command:
+        - python3
+        - -u
+        - -m
+        - google_cloud_pipeline_components.container.v1.bigquery.query_job.launcher
+        image: gcr.io/ml-pipeline/google-cloud-pipeline-components:2.22.0
+    exec-build-query:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - build_query
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef build_query(prc_preparar: str, input_overall_qual: float) ->\
+          \ str:\n    \"\"\"Arma la llamada parametrizada al stored procedure.\n\n\
+          \    En clase esto se hacia con string.Template fuera del pipeline; kfp\
+          \ 2 no\n    permite interpolar parametros del pipeline en un string, asi\
+          \ que se resuelve\n    dentro de un componente.\n    \"\"\"\n    return\
+          \ (\n        'DECLARE input_overall_qual FLOAT64 DEFAULT {valor};\\n'\n\
+          \        'CALL `{prc}` (input_overall_qual);'\n    ).format(valor=input_overall_qual,\
+          \ prc=prc_preparar)\n\n"
+        image: python:3.11
+    exec-error-op:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - error_op
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef error_op(msg: str):\n    raise ValueError(msg)\n\n"
+        image: python:3.11
+    exec-prediction:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prediction
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery'\
+          \ 'google-cloud-bigquery-storage' 'pandas' 'numpy' 'scikit-learn' 'joblib'\
+          \ 'db-dtypes' 'pyarrow' 'pandas-gbq' 'google-cloud-storage' 'pytz'  && \
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prediction(\n    project: str,\n    source_table: str,\n    features_table:\
+          \ str,\n    table_id: str,\n    table_aux: str,\n    path_model: str,\n\
+          \    input_overall_qual: float,\n):\n    \"\"\"Lee TABLE_OUTPUT, carga el\
+          \ modelo del bucket, predice y guarda en produccion.\n\n    Escribe dos\
+          \ tablas en el proyecto de produccion:\n      - table_id  : la salida oficial,\
+          \ estrecha, la que consume el negocio.\n      - table_aux : la foto del\
+          \ universo puntuado, con las 36 variables de\n                    entrada\
+          \ y el resultado. Sirve para auditoria, monitoreo de\n                 \
+          \   drift (Modulo 8) y reproceso.\n    \"\"\"\n    from datetime import\
+          \ datetime\n    from io import BytesIO\n\n    import numpy as np\n    import\
+          \ pandas as pd\n    import pandas_gbq\n    from google.cloud import bigquery,\
+          \ storage\n    from joblib import load\n    from pytz import timezone\n\n\
+          \    TZ = timezone('America/Lima')\n    FORMAT_DATE = '%Y-%m-%d'\n\n   \
+          \ client = bigquery.Client(project=project)\n\n    # Datos ya preparados\
+          \ por el componente 1\n    X = client.query('SELECT * FROM `{t}`'.format(t=source_table)).to_dataframe()\n\
+          \n    # Features seleccionadas, desde el proyecto fuente\n    features =\
+          \ client.query('SELECT * FROM `{t}`'.format(t=features_table)).to_dataframe()\n\
+          \    features = features['string_field_0'].tolist()\n\n    X = X[features]\n\
+          \n    def generate_datetime_created():\n        return datetime.now()\n\n\
+          \    def generate_date_created():\n        return datetime.now(TZ).date().strftime(FORMAT_DATE)\n\
+          \n    def load_model_from_gcs(path_model):\n        storage_client = storage.Client()\n\
+          \        bucket_name, blob_name = path_model.replace('gs://', '').split('/',\
+          \ 1)\n        bucket = storage_client.bucket(bucket_name)\n        blob\
+          \ = bucket.blob(blob_name)\n        model_bytes = blob.download_as_string()\n\
+          \        return load(BytesIO(model_bytes))\n\n    classifier = load_model_from_gcs(path_model)\n\
+          \n    # El modelo devuelve el logaritmo natural del precio de venta; se\
+          \ guarda la\n    # salida cruda antes de truncarla para poder reconstruir\
+          \ el precio.\n    raw = classifier.predict(X)\n    predictions = pd.DataFrame(raw,\
+          \ columns=['prediction'])\n\n    user_id = client.query('SELECT SESSION_USER()').to_dataframe().iloc[0,\
+          \ 0]\n\n    start_time = generate_datetime_created()\n    execute_date =\
+          \ generate_date_created()\n\n    predictions['prediction'] = predictions['prediction'].astype('int64')\n\
+          \    predictions['creation_user'] = user_id\n    predictions['process_date']\
+          \ = datetime.strptime(execute_date, '%Y-%m-%d')\n    predictions['process_date']\
+          \ = pd.to_datetime(predictions['process_date']).dt.date\n    predictions['load_date']\
+          \ = pd.to_datetime(start_time)\n\n    # Se escribe en el proyecto de PRODUCCION,\
+          \ distinto al de procesamiento\n    pandas_gbq.to_gbq(predictions, table_id,\
+          \ if_exists='append', project_id=project)\n\n    print('Predicciones generadas:\
+          \ %d filas -> %s' % (len(predictions), table_id))\n\n    # Foto del universo\
+          \ puntuado. Se arma en memoria, donde el orden de las\n    # filas si esta\
+          \ garantizado, y se escribe como una sola fila ancha: por eso\n    # no\
+          \ hace falta ninguna llave para relacionar la entrada con su resultado.\n\
+          \    universo = X.reset_index(drop=True).copy()\n    universo['prediction']\
+          \ = predictions['prediction']\n    universo['prediction_log'] = raw\n  \
+          \  universo['sale_price_usd'] = np.exp(raw)\n    universo['input_overall_qual']\
+          \ = input_overall_qual\n    universo['creation_user'] = predictions['creation_user']\n\
+          \    universo['process_date'] = predictions['process_date']\n    universo['load_date']\
+          \ = predictions['load_date']\n\n    pandas_gbq.to_gbq(universo, table_aux,\
+          \ if_exists='append', project_id=project)\n\n    print('Universo archivado:\
+          \ %d filas x %d columnas -> %s'\n          % (universo.shape[0], universo.shape[1],\
+          \ table_aux))\n\n"
+        image: python:3.11
+    exec-validate-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.17.3'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_data(\n    source_input_table: str,\n    features_table:\
+          \ str,\n) -> NamedTuple('Outputs', [('condition', str)]):\n    \"\"\"Comprueba\
+          \ que las tablas de ingesta del proyecto fuente existan y sean accesibles.\"\
+          \"\"\n    from google.cloud import bigquery\n\n    client = bigquery.Client()\n\
+          \    try:\n        client.get_table(source_input_table)\n        client.get_table(features_table)\n\
+          \        condition = 'true'\n    except Exception as e:\n        print('No\
+          \ se pudo validar la ingesta:', e)\n        condition = 'false'\n\n    from\
+          \ collections import namedtuple\n    salida = namedtuple('Outputs', ['condition'])\n\
+          \    return salida(condition)\n\n"
+        image: python:3.11
+    exec-vertex-pipelines-notification-email:
+      container:
+        args:
+        - --type
+        - VertexNotificationEmail
+        - --payload
+        - ''
+        command:
+        - python3
+        - -u
+        - -m
+        - google_cloud_pipeline_components.container.v1.vertex_notification_email.executor
+        image: gcr.io/ml-pipeline/google-cloud-pipeline-components:2.22.0
+pipelineInfo:
+  description: Pipeline de prediccion sobre tres proyectos GCP
+  name: pipeline-prediccion-proyecto-final
+root:
+  dag:
+    tasks:
+      exit-handler-1:
+        componentRef:
+          name: comp-exit-handler-1
+        inputs:
+          parameters:
+            pipelinechannel--features_table:
+              componentInputParameter: features_table
+            pipelinechannel--input_overall_qual:
+              componentInputParameter: input_overall_qual
+            pipelinechannel--path_model:
+              componentInputParameter: path_model
+            pipelinechannel--prc_preparar:
+              componentInputParameter: prc_preparar
+            pipelinechannel--project:
+              componentInputParameter: project
+            pipelinechannel--source_input_table:
+              componentInputParameter: source_input_table
+            pipelinechannel--table_aux:
+              componentInputParameter: table_aux
+            pipelinechannel--table_id:
+              componentInputParameter: table_id
+            pipelinechannel--table_output:
+              componentInputParameter: table_output
+        taskInfo:
+          name: Execute pipeline prediction
+      vertex-pipelines-notification-email:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-vertex-pipelines-notification-email
+        dependentTasks:
+        - exit-handler-1
+        inputs:
+          parameters:
+            pipeline_task_final_status:
+              taskFinalStatus:
+                producerTask: exit-handler-1
+            recipients:
+              componentInputParameter: recipients
+        taskInfo:
+          name: Notification Email
+        triggerPolicy:
+          strategy: ALL_UPSTREAM_TASKS_COMPLETED
+  inputDefinitions:
+    parameters:
+      features_table:
+        parameterType: STRING
+      input_overall_qual:
+        defaultValue: 0.0
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      path_model:
+        parameterType: STRING
+      prc_preparar:
+        defaultValue: dp-mlops17-ohuaman-pf-proc.ds_procesamiento.prc_preparar_universo
+        isOptional: true
+        parameterType: STRING
+      project:
+        parameterType: STRING
+      recipients:
+        parameterType: LIST
+      source_input_table:
+        parameterType: STRING
+      table_aux:
+        parameterType: STRING
+      table_id:
+        parameterType: STRING
+      table_output:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.17.3

@@ -1,0 +1,65 @@
+name: Build & Deploy Cloud Run Job (Vertex Pipeline)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: ${{ secrets.GOOGLE_PROJECT }}
+      PROJECT_FUENTE: dp-mlops17-ohuaman-pf-fuente
+      PROJECT_PRD: dp-mlops17-ohuaman-pf-prd
+      REGION: us-central1
+      IMAGE_REPOSITORY: imagen
+      IMAGE_NAME: vertex_pipeline
+      BUCKET: dp-mlops17-ohuaman-pf-vertex
+      # El modelo vive en su propio bucket, de solo lectura para el pipeline
+      BUCKET_MODELO: dp-mlops17-ohuaman-pf-modelo
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+
+    - name: Setup gcloud
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GOOGLE_PROJECT }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # CI: compilar el pipeline valida que el codigo del pipeline es correcto
+    - name: Compilar el pipeline
+      run: |
+        pip install -r my_app/requirements.txt
+        python my_app/pipeline_prediction.py
+
+    - name: Subir el pipeline compilado al bucket
+      run: |
+        gcloud storage cp my_app/pipeline_prediction.yaml gs://$BUCKET/demo/pipeline_prediction.yaml
+
+    - name: Construir y publicar la imagen
+      run: |
+        gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+        docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_REPOSITORY/$IMAGE_NAME:latest ./despliegue_cloud_run
+        docker push $REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_REPOSITORY/$IMAGE_NAME:latest
+
+    - name: Desplegar el Cloud Run Job
+      run: |
+        gcloud run jobs deploy run-pipeline-job \
+          --image $REGION-docker.pkg.dev/$PROJECT_ID/$IMAGE_REPOSITORY/$IMAGE_NAME:latest \
+          --region $REGION \
+          --service-account sa-cloud-run-job@$PROJECT_ID.iam.gserviceaccount.com \
+          --set-env-vars "PROJECT_ID=$PROJECT_ID,LOCATION=$REGION,PIPELINE_PATH=gs://$BUCKET/demo/pipeline_prediction.yaml,PIPELINE_ROOT=gs://$BUCKET/demo,MODEL_PATH=gs://$BUCKET_MODELO/linear_regression.joblib,SERVICE_ACCOUNT=sa-vertex-pipeline@$PROJECT_ID.iam.gserviceaccount.com,SOURCE_INPUT_TABLE=$PROJECT_FUENTE.hist_table.input_data,FEATURES_TABLE=$PROJECT_FUENTE.hist_table.selected_features,TABLE_OUTPUT=$PROJECT_ID.ds_procesamiento.table_output,PREDICTIONS_TABLE=$PROJECT_PRD.ds_produccion.ba_modelo_propension_inscripcion,AUX_TABLE=$PROJECT_PRD.ds_produccion.ba_aux_modelo_universo,PRC_PREPARAR=$PROJECT_ID.ds_procesamiento.prc_preparar_universo,INPUT_OVERALL_QUAL=0.0,NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}" \
+          --max-retries 1 --task-timeout 10m --quiet

@@ -1,0 +1,10 @@
+# NUNCA subir credenciales
+*.json
+!my_app/*.json
+sa-github-key.json
+__pycache__/
+*.pyc
+venv*/
+
+# Entregable de la tarea, no forma parte del codigo
+Capturas C/
